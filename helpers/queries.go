@@ -91,15 +91,16 @@ func GetPassword(username string) (string, error) {
 	return hashPass, getPassErr
 }
 
-func FetchUsers(createdBy uuid.UUID) ([]models.UserFetchModel, error) {
+func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) ([]models.UserFetchModel, error) {
 
-	query := `SELECT u.id,u.name, u.email, u.username, r.role
+	query := `WITH UserTask AS (SELECT u.id,u.name, u.email, u.username, r.role
 			  FROM users u
          		       INNER JOIN roles r on r.user_id = u.id
-			  WHERE u.created_by = $1 AND u.archived_at is null`
+			  WHERE u.created_by = $1 AND u.archived_at is null)
+			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 
 	var user []models.UserFetchModel
-	fetchErr := database.Data.Get(&user, query, createdBy)
+	fetchErr := database.Data.Get(&user, query, createdBy, taskSize, pageNo*taskSize)
 
 	return user, fetchErr
 }
@@ -121,14 +122,15 @@ func FetchUserRole(userIDs []string) ([]models.RoleStruct, error) {
 	return roleArr, err
 }
 
-func FetchAllUsers() ([]models.UserFetchModel, error) {
+func FetchAllUsers(pageNo, taskSize int) ([]models.UserFetchModel, error) {
 
-	query := `SELECT u.id,u.name, u.email, u.username
+	query := `WITH UserTask AS (SELECT u.id,u.name, u.email, u.username
 			  FROM users u
-			  WHERE u.archived_at is null`
+			  WHERE u.archived_at is null)
+			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 
 	var user []models.UserFetchModel
-	fetchErr := database.Data.Select(&user, query)
+	fetchErr := database.Data.Select(&user, query, taskSize, pageNo*taskSize)
 	var userIDs []string
 	for _, user := range user {
 		userIDs = append(userIDs, user.ID)
@@ -179,11 +181,13 @@ func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error)
 	return userLocation, err
 }
 
-func GetAllSubAdmins() ([]models.UserFetchModel, error) {
-	query := `SELECT u.id,u.name,u.email,u.username FROM users u`
+func GetAllSubAdmins(pageNo, taskSize int) ([]models.UserFetchModel, error) {
+
+	query := `WITH UserTask AS (SELECT u.id,u.name,u.email,u.username FROM users u)
+			  SELECT * FROM UserTask LIMIT $2 OFFSET $3`
 
 	var user []models.UserFetchModel
-	fetchErr := database.Data.Select(&user, query)
+	fetchErr := database.Data.Select(&user, query, taskSize, pageNo*taskSize)
 
 	var userIDs []string
 	for _, user := range user {
@@ -249,44 +253,49 @@ func CreateRestaurant(rest *models.AddRestaurantModel, createdBy uuid.UUID, tx *
 	return restID, restErr
 }
 
-func FetchRestaurant(userID uuid.UUID) ([]models.FetchRestaurantModel, error) {
+func FetchRestaurant(userID uuid.UUID, pageNo, taskSize int) ([]models.FetchRestaurantModel, error) {
 
-	query := `SELECT name, latitude, longitude
+	query := `WITH UserTask AS (SELECT name, latitude, longitude
 			  FROM restaurant
-              WHERE created_by=$1`
+              WHERE created_by=$1)
+              Select * from UserTask LIMIT $2 OFFSET $3`
 	var restaurant []models.FetchRestaurantModel
-	err := database.Data.Select(&restaurant, query, userID)
+	err := database.Data.Select(&restaurant, query, userID, taskSize, pageNo*taskSize)
 
 	return restaurant, err
 }
 
-func FetchAllRestaurant() ([]models.FetchRestaurantModel, error) {
-	query := `SELECT name, latitude, longitude
-			  FROM restaurant`
+func FetchAllRestaurant(pageNo, taskSize int) ([]models.FetchRestaurantModel, error) {
+
+	query := `WITH UserTask AS (SELECT name, latitude, longitude
+			  FROM restaurant)
+			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 	var restaurant []models.FetchRestaurantModel
-	err := database.Data.Select(&restaurant, query)
+	err := database.Data.Select(&restaurant, query, taskSize, pageNo*taskSize)
 
 	return restaurant, err
 }
 
-func FetchDish(userID uuid.UUID, restID string) ([]models.Dish, error) {
+func FetchDish(userID uuid.UUID, restID string, pageNo, taskSize int) ([]models.Dish, error) {
 
-	query := `SELECT name,price
+	query := `with UserTask as (SELECT name,price
               FROM dishes
-			  WHERE created_by=$1 and restaurant_id=$2`
+			  WHERE created_by=$1 and restaurant_id=$2)
+			  SELECT * from UserTask LIMIT $3 OFFSET $4`
 	var dishList []models.Dish
-	err := database.Data.Select(&dishList, query, userID, restID)
+	err := database.Data.Select(&dishList, query, userID, restID, taskSize, pageNo*taskSize)
 
 	return dishList, err
 }
 
-func FetchAllDish(restID string) ([]models.Dish, error) {
+func FetchAllDish(restID string, pageNo, taskSize int) ([]models.Dish, error) {
 
-	query := `SELECT name,price
+	query := `WITH UserTask AS (SELECT name,price
               FROM dishes
-			  WHERE restaurant_id=$1`
+			  WHERE restaurant_id=$1) 
+			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 	var dishList []models.Dish
-	err := database.Data.Select(&dishList, query, restID)
+	err := database.Data.Select(&dishList, query, restID, taskSize, pageNo*taskSize)
 
 	return dishList, err
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 func AddNewUser(w http.ResponseWriter, r *http.Request) {
@@ -191,13 +192,22 @@ func FetchUsers(w http.ResponseWriter, r *http.Request) {
 	signedUser := ctx.UserID
 	signedUserID, _ := uuid.Parse(signedUser)
 
+	var page models.PageModel
+	PageID := r.URL.Query().Get("pageNo")
+	page.PageNo, _ = strconv.Atoi(PageID)
+	TaskLimit := r.URL.Query().Get("taskLimit")
+	page.TaskSize, _ = strconv.Atoi(TaskLimit)
+	if page.TaskSize == 0 {
+		page.TaskSize = 5
+	}
+
 	users := make([]models.UsersDetail, 0)
 	fetchUser := make([]models.UserFetchModel, 0)
 	var fetchErr error
 
 	if signedUserRole == "subadmin" {
 
-		fetchUser, fetchErr = helpers.FetchUsers(signedUserID)
+		fetchUser, fetchErr = helpers.FetchUsers(signedUserID, page.PageNo-1, page.TaskSize)
 		if fetchErr != nil {
 			log.Printf("FetchUsers : Error in fetching the users made by subadmin")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -206,7 +216,7 @@ func FetchUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if signedUserRole == "admin" {
-		fetchUser, fetchErr = helpers.FetchAllUsers()
+		fetchUser, fetchErr = helpers.FetchAllUsers(page.PageNo-1, page.TaskSize)
 		if fetchErr != nil {
 			log.Printf("FetchUsers : Error in fetching all the users %s", fetchErr)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -269,7 +279,17 @@ func FetchAllSubAdmins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subAdminDetails, fetchErr := helpers.GetAllSubAdmins()
+	var page models.PageModel
+	PageID := r.URL.Query().Get("pageNo")
+	page.PageNo, _ = strconv.Atoi(PageID)
+	TaskLimit := r.URL.Query().Get("taskLimit")
+	page.TaskSize, _ = strconv.Atoi(TaskLimit)
+
+	if page.TaskSize == 0 {
+		page.TaskSize = 5
+	}
+
+	subAdminDetails, fetchErr := helpers.GetAllSubAdmins(page.PageNo-1, page.TaskSize)
 	if fetchErr != nil {
 		log.Printf("FetchAllSubAdmins : Error in fetching all the subadmins. %s", fetchErr)
 		w.WriteHeader(http.StatusInternalServerError)

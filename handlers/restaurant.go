@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 func AddRestaurant(w http.ResponseWriter, r *http.Request) {
@@ -77,10 +78,20 @@ func GetRestaurantList(w http.ResponseWriter, r *http.Request) {
 	signedUser := ctx.UserID
 	signedUserID, _ := uuid.Parse(signedUser)
 
+	var page models.PageModel
+	PageID := r.URL.Query().Get("pageNo")
+	page.PageNo, _ = strconv.Atoi(PageID)
+	TaskLimit := r.URL.Query().Get("taskLimit")
+	page.TaskSize, _ = strconv.Atoi(TaskLimit)
+
+	if page.TaskSize == 0 {
+		page.TaskSize = 5
+	}
+
 	fetchRestaurant := make([]models.FetchRestaurantModel, 0)
 	var fetchErr error
 	if signedUserRole == "subadmin" {
-		fetchRestaurant, fetchErr = helpers.FetchRestaurant(signedUserID)
+		fetchRestaurant, fetchErr = helpers.FetchRestaurant(signedUserID, page.PageNo-1, page.TaskSize)
 		if fetchErr != nil {
 			log.Printf("GetRestaurantList : Error in fetching the restaurant")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -89,7 +100,7 @@ func GetRestaurantList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if signedUserRole == "admin" {
-		fetchRestaurant, fetchErr = helpers.FetchAllRestaurant()
+		fetchRestaurant, fetchErr = helpers.FetchAllRestaurant(page.PageNo-1, page.TaskSize)
 		if fetchErr != nil {
 			log.Printf("GetRestaurantList : Error in fetching all the restaurant")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -119,6 +130,16 @@ func GetRestaurantDishList(w http.ResponseWriter, r *http.Request) {
 	signedUser := ctx.UserID
 	signedUserID, _ := uuid.Parse(signedUser)
 
+	var page models.PageModel
+	PageID := r.URL.Query().Get("pageNo")
+	page.PageNo, _ = strconv.Atoi(PageID)
+	TaskLimit := r.URL.Query().Get("taskLimit")
+	page.TaskSize, _ = strconv.Atoi(TaskLimit)
+
+	if page.TaskSize == 0 {
+		page.TaskSize = 5
+	}
+
 	//var restaurantID string
 	var restID models.Restaurant
 	msg := json.NewDecoder(r.Body).Decode(&restID)
@@ -131,7 +152,7 @@ func GetRestaurantDishList(w http.ResponseWriter, r *http.Request) {
 	var fetchRestaurantDish []models.Dish
 	var fetchDishErr error
 	if signedUserRole == "subadmin" {
-		fetchRestaurantDish, fetchDishErr = helpers.FetchDish(signedUserID, restID.RestaurantID)
+		fetchRestaurantDish, fetchDishErr = helpers.FetchDish(signedUserID, restID.RestaurantID, page.PageNo-1, page.TaskSize)
 		if fetchDishErr != nil {
 			log.Printf("GetRestaurantDishList : Error in fetching dish")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -140,7 +161,7 @@ func GetRestaurantDishList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if signedUserRole == "admin" {
-		fetchRestaurantDish, fetchDishErr = helpers.FetchAllDish(restID.RestaurantID)
+		fetchRestaurantDish, fetchDishErr = helpers.FetchAllDish(restID.RestaurantID, page.PageNo-1, page.TaskSize)
 		if fetchDishErr != nil {
 			log.Printf("GetRestaurantDishList : Error in fetching all the dish")
 			w.WriteHeader(http.StatusInternalServerError)

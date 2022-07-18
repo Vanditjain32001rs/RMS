@@ -17,7 +17,6 @@ import (
 func AddRestaurant(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context().Value("User").(models.ContextMap)
-	signedUserRole := ctx.UserRole
 	signedUser := ctx.UserID
 	signedUserID, _ := uuid.Parse(signedUser)
 
@@ -29,11 +28,6 @@ func AddRestaurant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if signedUserRole == "user" {
-		log.Printf("AddRestaurant : User cannot create a restaurant")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
 	var restID string
 	var err error
 	txErr := database.Tx(func(tx *sqlx.Tx) error {
@@ -73,11 +67,6 @@ func AddRestaurant(w http.ResponseWriter, r *http.Request) {
 
 func GetRestaurantList(w http.ResponseWriter, r *http.Request) {
 
-	ctx := r.Context().Value("User").(models.ContextMap)
-	signedUserRole := ctx.UserRole
-	signedUser := ctx.UserID
-	signedUserID, _ := uuid.Parse(signedUser)
-
 	var page models.PageModel
 	PageID := r.URL.Query().Get("pageNo")
 	page.PageNo, _ = strconv.Atoi(PageID)
@@ -90,22 +79,12 @@ func GetRestaurantList(w http.ResponseWriter, r *http.Request) {
 
 	fetchRestaurant := make([]models.FetchRestaurantModel, 0)
 	var fetchErr error
-	if signedUserRole == "subadmin" {
-		fetchRestaurant, fetchErr = helpers.FetchRestaurant(signedUserID, page.PageNo-1, page.TaskSize)
-		if fetchErr != nil {
-			log.Printf("GetRestaurantList : Error in fetching the restaurant")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
 
-	if signedUserRole == "admin" {
-		fetchRestaurant, fetchErr = helpers.FetchAllRestaurant(page.PageNo-1, page.TaskSize)
-		if fetchErr != nil {
-			log.Printf("GetRestaurantList : Error in fetching all the restaurant")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+	fetchRestaurant, fetchErr = helpers.FetchAllRestaurant(page.PageNo-1, page.TaskSize)
+	if fetchErr != nil {
+		log.Printf("GetRestaurantList : Error in fetching all the restaurant")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	jsonData, jsonErr := utilities.EncodeToJson(fetchRestaurant)
@@ -124,11 +103,6 @@ func GetRestaurantList(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetRestaurantDishList(w http.ResponseWriter, r *http.Request) {
-
-	ctx := r.Context().Value("User").(models.ContextMap)
-	signedUserRole := ctx.UserRole
-	signedUser := ctx.UserID
-	signedUserID, _ := uuid.Parse(signedUser)
 
 	var page models.PageModel
 	PageID := r.URL.Query().Get("pageNo")
@@ -151,22 +125,11 @@ func GetRestaurantDishList(w http.ResponseWriter, r *http.Request) {
 
 	var fetchRestaurantDish []models.Dish
 	var fetchDishErr error
-	if signedUserRole == "subadmin" {
-		fetchRestaurantDish, fetchDishErr = helpers.FetchDish(signedUserID, restID.RestaurantID, page.PageNo-1, page.TaskSize)
-		if fetchDishErr != nil {
-			log.Printf("GetRestaurantDishList : Error in fetching dish")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if signedUserRole == "admin" {
-		fetchRestaurantDish, fetchDishErr = helpers.FetchAllDish(restID.RestaurantID, page.PageNo-1, page.TaskSize)
-		if fetchDishErr != nil {
-			log.Printf("GetRestaurantDishList : Error in fetching all the dish")
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+	fetchRestaurantDish, fetchDishErr = helpers.FetchAllDish(restID.RestaurantID, page.PageNo-1, page.TaskSize)
+	if fetchDishErr != nil {
+		log.Printf("GetRestaurantDishList : Error in fetching all the dish")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
 	jsonData, jsonErr := utilities.EncodeToJson(fetchRestaurantDish)
@@ -247,4 +210,33 @@ func GetDistance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+}
+
+func UpdateDish(w http.ResponseWriter, r *http.Request) {
+
+	var restaurant models.AddDishModel
+	msg := json.NewDecoder(r.Body).Decode(&restaurant)
+	if msg != nil {
+		log.Printf("UpdateDish : Error in decoding the json body")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err := helpers.UpdateDish(restaurant)
+	if err != nil {
+		log.Printf("UpdateDish : Error in updating the dish. %s", err)
+	}
+
+	jsonData, jsonErr := utilities.EncodeToJson(fmt.Sprintf("Updated Dish"))
+	if jsonErr != nil {
+		log.Printf("UpdateDish : Error in creating json file.")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	_, wErr := w.Write(jsonData)
+	if wErr != nil {
+		log.Printf("UpdateDish : Error in writing json data.")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }

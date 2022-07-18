@@ -4,6 +4,7 @@ type Dish struct {
 	Name  string  `json:"name" db:"name"`
 	Price float64 `json:"price" db:"price"`
 }
+
 type AddRestaurantModel struct {
 	Name      string  `json:"name" db:"name"`
 	Latitude  float64 `json:"latitude" db:"latitude"`

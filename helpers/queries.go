@@ -84,7 +84,7 @@ func AddUserLocation(userLocation *models.UserLocation, userID string) error {
 
 func GetPassword(username string) (string, error) {
 
-	query := `SELECT password FROM users WHERE username=$1`
+	query := `SELECT password FROM users WHERE username=$1 and archived_at is not null`
 	var hashPass string
 	getPassErr := database.Data.Get(&hashPass, query, username)
 
@@ -107,7 +107,7 @@ func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) ([]models.UserFetchMo
 
 func FetchUserRole(userIDs []string) ([]models.RoleStruct, error) {
 
-	query := `SELECT user_id,role FROM roles WHERE user_id IN (?)`
+	query := `SELECT user_id,role FROM roles WHERE user_id IN (?) and archived_at is not null`
 	var roleArr []models.RoleStruct
 	//var userIDs []string
 	//for _, user := range user {
@@ -155,8 +155,8 @@ func GetRole(username string) (*models.UserRoleID, error) {
 	query := `SELECT u.id, r.role, u.created_by
 			  FROM roles r
          			   INNER JOIN users u on u.id = r.user_id
-			  WHERE u.username = $1
-			  ORDER BY r.role
+			  WHERE u.username = $1 and u.archived_at is not null
+			  ORDER BY u.created_at desc
 			  LIMIT 1`
 	var user models.UserRoleID
 	getRoleErr := database.Data.Get(&user, query, username)
@@ -166,7 +166,7 @@ func GetRole(username string) (*models.UserRoleID, error) {
 
 func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error) {
 
-	query := `SELECT user_id,latitude,longitude FROM location WHERE user_id IN (?)`
+	query := `SELECT user_id,latitude,longitude FROM location WHERE user_id IN (?) and archived_at is not null`
 	var userLocation []models.UsersLocations
 	var userIDs []string
 	for _, user := range users {
@@ -183,7 +183,7 @@ func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error)
 
 func GetAllSubAdmins(pageNo, taskSize int) ([]models.UserFetchModel, error) {
 
-	query := `WITH UserTask AS (SELECT u.id,u.name,u.email,u.username FROM users u)
+	query := `WITH UserTask AS (SELECT u.id,u.name,u.email,u.username FROM users u where archived_at is not null)
 			  SELECT * FROM UserTask LIMIT $2 OFFSET $3`
 
 	var user []models.UserFetchModel
@@ -253,22 +253,10 @@ func CreateRestaurant(rest *models.AddRestaurantModel, createdBy uuid.UUID, tx *
 	return restID, restErr
 }
 
-func FetchRestaurant(userID uuid.UUID, pageNo, taskSize int) ([]models.FetchRestaurantModel, error) {
-
-	query := `WITH UserTask AS (SELECT name, latitude, longitude
-			  FROM restaurant
-              WHERE created_by=$1)
-              Select * from UserTask LIMIT $2 OFFSET $3`
-	var restaurant []models.FetchRestaurantModel
-	err := database.Data.Select(&restaurant, query, userID, taskSize, pageNo*taskSize)
-
-	return restaurant, err
-}
-
 func FetchAllRestaurant(pageNo, taskSize int) ([]models.FetchRestaurantModel, error) {
 
 	query := `WITH UserTask AS (SELECT name, latitude, longitude
-			  FROM restaurant)
+			  FROM restaurant where archived_at is not null)
 			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 	var restaurant []models.FetchRestaurantModel
 	err := database.Data.Select(&restaurant, query, taskSize, pageNo*taskSize)
@@ -276,23 +264,11 @@ func FetchAllRestaurant(pageNo, taskSize int) ([]models.FetchRestaurantModel, er
 	return restaurant, err
 }
 
-func FetchDish(userID uuid.UUID, restID string, pageNo, taskSize int) ([]models.Dish, error) {
-
-	query := `with UserTask as (SELECT name,price
-              FROM dishes
-			  WHERE created_by=$1 and restaurant_id=$2)
-			  SELECT * from UserTask LIMIT $3 OFFSET $4`
-	var dishList []models.Dish
-	err := database.Data.Select(&dishList, query, userID, restID, taskSize, pageNo*taskSize)
-
-	return dishList, err
-}
-
 func FetchAllDish(restID string, pageNo, taskSize int) ([]models.Dish, error) {
 
 	query := `WITH UserTask AS (SELECT name,price
               FROM dishes
-			  WHERE restaurant_id=$1) 
+			  WHERE restaurant_id=$1 and archived_at is not null) 
 			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 	var dishList []models.Dish
 	err := database.Data.Select(&dishList, query, restID, taskSize, pageNo*taskSize)
@@ -314,7 +290,7 @@ func FetchSpecificRestaurantLocation(restID string) (models.Location, error) {
 
 	query := `SELECT latitude,longitude
 			  FROM restaurant
-			  WHERE id=$1`
+			  WHERE id=$1 and archived_at is not null`
 
 	var restLoc models.Location
 	err := database.Data.Get(&restLoc, query, restID)
@@ -334,4 +310,18 @@ func FetchDistance(user models.DistanceModel) (float64, error) {
 	distErr := database.Data.Get(&dist, query, restaurant.Latitude, restaurant.Longitude, user.UserLat, user.UserLng)
 
 	return dist, distErr
+}
+
+func UpdateUser(user models.UpdateUsersModel) error {
+	query := `UPDATE users SET name=$1, email=$2, username=$3 where id=$4 and archived_at is not null`
+	_, err := database.Data.Exec(query, user.Name, user.Email, user.Username, user.ID)
+
+	return err
+}
+
+func UpdateDish(dish models.AddDishModel) error {
+	query := `UPDATE dishes SET  price=$2 WHERE restaurant_id=$3 and name=$1 and archived_at is not null`
+	_, err := database.Data.Exec(query, dish.Name, dish.Price, dish.RestaurantID)
+
+	return err
 }

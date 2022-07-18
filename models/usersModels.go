@@ -25,6 +25,13 @@ type UsersDetail struct {
 	Location []Location `json:"location"`
 }
 
+type UpdateUsersModel struct {
+	ID       string `json:"id" db:"id"`
+	Name     string `json:"name" db:"name"`
+	Email    string `json:"email" db:"email"`
+	Username string `json:"userName" db:"username"`
+}
+
 type UserFetchModel struct {
 	ID       string   `json:"userID" db:"id"`
 	Name     string   `json:"name" db:"name"`

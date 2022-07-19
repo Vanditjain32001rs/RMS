@@ -11,6 +11,7 @@ import (
 )
 
 func SignIn(w http.ResponseWriter, r *http.Request) {
+
 	cred := &models.Credentials{}
 	msg := json.NewDecoder(r.Body).Decode(&cred)
 	if msg != nil {
@@ -19,6 +20,7 @@ func SignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//retrieve password from database to compare
 	pass, getPassErr := helpers.GetPassword(cred.Username)
 	if getPassErr != nil {
 		log.Printf("Signin : Error in retreiving the password from database.")
@@ -26,11 +28,14 @@ func SignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//comparing the passwords
 	if compareErr := bcrypt.CompareHashAndPassword([]byte(pass), []byte(cred.Password)); compareErr != nil {
 		log.Printf("Signin : Error in comparing the passwords.")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+
+	// fetching user role, id and created_by
 	user, getIdErr := helpers.GetRole(cred.Username)
 	if getIdErr != nil {
 		log.Printf("Signin : Error in retreiving the User role.")

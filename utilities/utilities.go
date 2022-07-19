@@ -10,7 +10,7 @@ func HashPassword(pwd string) (string, error) {
 	return string(passHash), hashErr
 }
 
-func EncodeToJson(i interface{}) ([]byte, error) {
+func EncodeToJson(i ...interface{}) ([]byte, error) {
 	jsonData, jsonErr := json.Marshal(i)
 
 	return jsonData, jsonErr

@@ -10,6 +10,7 @@ import (
 )
 
 func SignUp(w http.ResponseWriter, r *http.Request) {
+
 	user := &models.UserModel{}
 	msg := json.NewDecoder(r.Body).Decode(user)
 	if msg != nil {
@@ -17,6 +18,8 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// hash the given password
 	pwd, hashErr := utilities.HashPassword(user.Password)
 	if hashErr != nil {
 		log.Printf("SignUp : Error in hashing the password")
@@ -24,6 +27,8 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user.Password = pwd
+
+	// entering user detail in database
 	ID, registerErr := helpers.RegisterUser(user)
 	if registerErr != nil {
 		log.Printf("SignUp : Error in registering the user")
@@ -44,4 +49,8 @@ func SignUp(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	//if err := json.NewEncoder(w).Encode(struct {
+	//	ID string `json:"id"`
+	//}{ID: ID}); err != nil {
+	//}
 }

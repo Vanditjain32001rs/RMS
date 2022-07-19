@@ -1,19 +1,21 @@
 package handlers
 
 import (
+	"RMS/database"
 	"RMS/helpers"
 	"RMS/models"
 	"RMS/utilities"
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"strconv"
 )
 
 func AddNewUser(w http.ResponseWriter, r *http.Request) {
-	//log.Printf("AddNewUser : reached")
+
 	ctx := r.Context().Value("User").(models.ContextMap)
 	signedUserID := ctx.UserID
 
@@ -25,6 +27,14 @@ func AddNewUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//v := validator.New()
+	//vErr := v.Struct(user)
+	//if vErr != nil {
+	//	log.Printf("AddNewUser : Error in validating the details entered")
+	//	w.WriteHeader(http.StatusBadRequest)
+	//	return
+	//}
+
 	passHash, hashErr := utilities.HashPassword(user.Password)
 	if hashErr != nil {
 		log.Printf("AddNewUser : Error in hashing the password")
@@ -34,9 +44,39 @@ func AddNewUser(w http.ResponseWriter, r *http.Request) {
 
 	user.Password = passHash
 
-	ID, addErr := helpers.CreateUser(user, signedUserID)
-	if addErr != nil {
-		log.Printf("AddUser : Error in creating the user")
+	var ID string
+	var err error
+	txErr := database.Tx(func(tx *sqlx.Tx) error {
+		ID, err = helpers.CreateUser(user, signedUserID, tx)
+		if err != nil {
+			log.Printf("AddNewUser: error in creating user")
+			//w.WriteHeader(http.StatusInternalServerError)
+			return err
+		}
+
+		var AddRole models.AddRoleModel
+		AddRole.ID = ID
+		AddRole.Username = user.Username
+		AddRole.Role = user.Role[0]
+		err = helpers.AddRoleQuery(AddRole, tx)
+		if err != nil {
+			log.Printf("AddNewUser : Error in creating user role")
+			//w.WriteHeader(http.StatusInternalServerError)
+			return err
+		}
+
+		var AddLocation *models.UserLocation
+		AddLocation.Username = user.Username
+		AddLocation.UserLoc = user.Location
+		err = helpers.AddUserLocation(AddLocation, ID, tx)
+		if err != nil {
+			log.Printf("AddNewUser : Error in creating user location")
+			return err
+		}
+		return err
+	})
+
+	if txErr != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -71,15 +111,23 @@ func AddNewLocation(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
+	var addLocationErr error
 	if user.UserRole == "user" {
 
-		addLocationErr := helpers.AddUserLocation(userLocation, user.UserID)
-		if addLocationErr != nil {
-			log.Printf("AddNewLocation : Error in add location query")
+		txErr := database.Tx(func(tx *sqlx.Tx) error {
+			addLocationErr = helpers.AddUserLocation(userLocation, user.UserID, tx)
+			if addLocationErr != nil {
+				log.Printf("AddNewLocation : Error in add location query")
+				w.WriteHeader(http.StatusInternalServerError)
+				return addLocationErr
+			}
+			return addLocationErr
+		})
+		if txErr != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+
 		jsonData, jsonErr := utilities.EncodeToJson(fmt.Sprintf("New Location Added"))
 		if jsonErr != nil {
 			log.Printf("AddNewLocation : Error in encoding to json")
@@ -176,17 +224,15 @@ func FetchUsersByAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	users := make([]models.UsersDetail, 0)
-	fetchUser := make([]models.UserFetchModel, 0)
-	var fetchErr error
 
-	fetchUser, fetchErr = helpers.FetchAllUsers(page.PageNo-1, page.TaskSize)
+	fetchUser, fetchErr := helpers.FetchAllUsers(page.PageNo-1, page.TaskSize)
 	if fetchErr != nil {
 		log.Printf("FetchUsersByAdmin : Error in fetching all the users %s", fetchErr)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	for _, userInfo := range fetchUser {
+	for _, userInfo := range fetchUser.User {
 		var temp models.UsersDetail
 		temp.ID = userInfo.ID
 		temp.Name = userInfo.Name
@@ -197,11 +243,12 @@ func FetchUsersByAdmin(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	userLocations, locationErr := helpers.GetLocation(fetchUser)
+	userLocations, locationErr := helpers.GetLocation(fetchUser.User)
 	if locationErr != nil {
 		log.Printf("FetchUsersByAdmin : Error in fetching users locations")
 	}
-	var returnUser []models.UsersDetail
+
+	returnUser := make([]models.UsersDetail, 0)
 	for _, user := range users {
 		for _, userAdd := range userLocations {
 			if user.ID == userAdd.UserID {
@@ -215,7 +262,10 @@ func FetchUsersByAdmin(w http.ResponseWriter, r *http.Request) {
 		returnUser = append(returnUser, user)
 	}
 
-	jsonData, jsonErr := utilities.EncodeToJson(returnUser)
+	var user models.UserFetchAdmin
+	user.User = returnUser
+	user.TotalCount = fetchUser.User[0].TotalCount
+	jsonData, jsonErr := utilities.EncodeToJson(user)
 	if jsonErr != nil {
 		log.Printf("FetchUsersByAdmin : Error in encoding to json ")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -246,17 +296,15 @@ func FetchUsersBySubAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	users := make([]models.UsersDetail, 0)
-	fetchUser := make([]models.UserFetchModel, 0)
-	var fetchErr error
 
-	fetchUser, fetchErr = helpers.FetchUsers(signedUserID, page.PageNo-1, page.TaskSize)
+	fetchUser, fetchErr := helpers.FetchUsers(signedUserID, page.PageNo-1, page.TaskSize)
 	if fetchErr != nil {
 		log.Printf("FetchUsersBySubadmin : Error in fetching the users made by subadmin")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	for _, userInfo := range fetchUser {
+	for _, userInfo := range fetchUser.User {
 		var temp models.UsersDetail
 		temp.ID = userInfo.ID
 		temp.Name = userInfo.Name
@@ -267,7 +315,7 @@ func FetchUsersBySubAdmin(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	userLocations, locationErr := helpers.GetLocation(fetchUser)
+	userLocations, locationErr := helpers.GetLocation(fetchUser.User)
 	if locationErr != nil {
 		log.Printf("FetchUsersBySubAdmin : Error in fetching users locations")
 	}
@@ -283,8 +331,11 @@ func FetchUsersBySubAdmin(w http.ResponseWriter, r *http.Request) {
 		}
 		returnUser = append(returnUser, user)
 	}
+	var user models.UserFetchAdmin
+	user.TotalCount = fetchUser.User[0].TotalCount
+	user.User = returnUser
 
-	jsonData, jsonErr := utilities.EncodeToJson(returnUser)
+	jsonData, jsonErr := utilities.EncodeToJson(user)
 	if jsonErr != nil {
 		log.Printf("FetchUsersBySubAdmin : Error in encoding to json ")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -317,6 +368,8 @@ func FetchAllSubAdmins(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	subAdminDetails.TotalCount = subAdminDetails.User[0].TotalCount
+	//totalCount := fmt.Sprintf("Total Count : %d", subAdminDetails.TotalCount)
 	jsonData, jsonErr := utilities.EncodeToJson(subAdminDetails)
 	if jsonErr != nil {
 		log.Printf("CreateUser : Error in creating json file.")
@@ -334,7 +387,7 @@ func FetchAllSubAdmins(w http.ResponseWriter, r *http.Request) {
 
 func AddRole(w http.ResponseWriter, r *http.Request) {
 
-	user := &models.AddRoleModel{}
+	user := models.AddRoleModel{}
 	msg := json.NewDecoder(r.Body).Decode(&user)
 	if msg != nil {
 		log.Printf("AddRole : Error in decoding the json body")
@@ -342,9 +395,19 @@ func AddRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addErr := helpers.AddRoleQuery(user)
-	if addErr != nil {
-		log.Printf("AddRole : Error in adding role. %s", addErr)
+	//addErr := helpers.AddRoleQuery(user)
+	var addErr error
+
+	txErr := database.Tx(func(tx *sqlx.Tx) error {
+		addErr = helpers.AddRoleQuery(user, tx)
+		if addErr != nil {
+			log.Printf("AddNewLocation : Error in add location query")
+			w.WriteHeader(http.StatusInternalServerError)
+			return addErr
+		}
+		return addErr
+	})
+	if txErr != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

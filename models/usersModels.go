@@ -1,6 +1,9 @@
 package models
 
-import "github.com/google/uuid"
+import (
+	_ "github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
+)
 
 type Location struct {
 	Latitude  float64 `json:"latitude" db:"latitude"`
@@ -33,11 +36,22 @@ type UpdateUsersModel struct {
 }
 
 type UserFetchModel struct {
-	ID       string   `json:"userID" db:"id"`
-	Name     string   `json:"name" db:"name"`
-	Email    string   `json:"email" db:"email"`
-	Username string   `json:"userName" db:"username"`
-	Role     []string `json:"role" db:"role"`
+	ID         string   `json:"userID" db:"id"`
+	Name       string   `json:"name" db:"name"`
+	Email      string   `json:"email" db:"email"`
+	Username   string   `json:"userName" db:"username"`
+	Role       []string `json:"role" db:"role"`
+	TotalCount int      `json:"-" db:"total_count"`
+}
+
+type UserFetch struct {
+	TotalCount int              `json:"totalCount"`
+	User       []UserFetchModel `json:"user"`
+}
+
+type UserFetchAdmin struct {
+	TotalCount int           `json:"totalCount"`
+	User       []UsersDetail `json:"user"`
 }
 
 type UserModel struct {
@@ -61,7 +75,7 @@ type UsersLocations struct {
 type UserRoleID struct {
 	UserID    string    `json:"userID" db:"id"`
 	UserRole  string    `json:"userRole" db:"role"`
-	CreatedBy uuid.UUID `json:"createdBY" db:"created_by"`
+	CreatedBy uuid.UUID `json:"createdBy" db:"created_by"`
 }
 
 type RoleStruct struct {
@@ -78,4 +92,9 @@ type AddRoleModel struct {
 	ID       string `json:"id" db:"user_id"`
 	Username string `json:"userName" db:"username"`
 	Role     string `json:"role" db:"role"`
+}
+
+type Pagination struct {
+	TotalCount int              `json:"totalCount" db:"total_count"`
+	User       []UserFetchModel `json:"usersDetail"`
 }

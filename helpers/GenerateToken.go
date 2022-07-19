@@ -18,7 +18,6 @@ var ExpirationTime = time.Now().Add(time.Hour * 24 * 7)
 func TokenGeneration(username string, user *models.UserRoleID) (string, error) {
 
 	claims := &models.Claims{
-
 		Username: username,
 		UserRole: user.UserRole,
 		UserID:   user.UserID,

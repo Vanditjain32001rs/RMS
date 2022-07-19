@@ -10,26 +10,30 @@ import (
 	"log"
 )
 
-func CreateUser(user *models.Users, createdBy string) (string, error) {
-	query := `WITH my_data(name,email,username,password,created_by,role,latitude,longitude) AS
-    		  (VALUES ($1,$2,$3,$4,$5::UUID,$6::user_roles,$7,$8)),
-     				step_one as (
-         				insert into users (name, email, username, password, created_by)
-             			SELECT m.name, m.email, m.username, m.password, m.created_by FROM my_data m
-             			returning id),
-     				step_two as (
-         				insert into roles (user_id, role, username)
-             			select s1.id,m.role,m.username
-             			from step_one s1,my_data m
-             			returning user_id)
-			  insert
-			  into location(user_id, latitude, longitude)
-			  select s2.user_id,m.latitude,m.longitude
-			  from step_two s2,my_data m
-			  RETURNING user_id`
+func AddUserLocation(userLocation *models.UserLocation, userID string, tx *sqlx.Tx) error {
+	query := `INSERT INTO location(user_id,latitude,longitude)
+			  VALUES($1,$2,$3)`
+	_, addLocationErr := tx.Exec(query, userID, userLocation.UserLoc.Latitude, userLocation.UserLoc.Longitude)
+	return addLocationErr
+}
+
+func AddRoleQuery(user models.AddRoleModel, tx *sqlx.Tx) error {
+
+	query := `INSERT INTO roles(user_id,role,username)
+			  VALUES($1,$2,$3)`
+
+	_, addErr := tx.Exec(query, user.ID, user.Role, user.Username)
+
+	return addErr
+}
+
+func CreateUser(user *models.Users, createdBy string, tx *sqlx.Tx) (string, error) {
+	query := `insert into users (name, email, username, password, created_by)
+              VALUES ($1,$2,$3,$4,$5)
+              returning id`
 
 	var userID string
-	createErr := database.Data.Get(&userID, query, user.Name, user.Email, user.Username, user.Password, createdBy, user.Role[0], user.Location.Latitude, user.Location.Longitude)
+	createErr := tx.Get(&userID, query, user.Name, user.Email, user.Username, user.Password, createdBy)
 
 	return userID, createErr
 }
@@ -70,16 +74,18 @@ func RegisterUser(user *models.UserModel) (string, error) {
 			  RETURNING user_id`
 
 	var userID string
-	registerErr := database.Data.Get(&userID, query, user.Name, user.Email, user.Username, user.Password, user.Location.Latitude, user.Location.Longitude)
+	args := []interface{}{
+		user.Name,
+		user.Email,
+		user.Username,
+		user.Password,
+		user.Location.Latitude,
+		user.Location.Longitude,
+	}
+
+	registerErr := database.Data.Get(&userID, query, args...)
 
 	return userID, registerErr
-}
-
-func AddUserLocation(userLocation *models.UserLocation, userID string) error {
-	query := `INSERT INTO location(user_id,latitude,longitude)
-			  VALUES($1,$2,$3)`
-	_, addLocationErr := database.Data.Exec(query, userID, userLocation.UserLoc.Latitude, userLocation.UserLoc.Longitude)
-	return addLocationErr
 }
 
 func GetPassword(username string) (string, error) {
@@ -91,7 +97,7 @@ func GetPassword(username string) (string, error) {
 	return hashPass, getPassErr
 }
 
-func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) ([]models.UserFetchModel, error) {
+func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) (models.UserFetch, error) {
 
 	query := `WITH UserTask AS (SELECT u.id,u.name, u.email, u.username, r.role
 			  FROM users u
@@ -99,7 +105,7 @@ func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) ([]models.UserFetchMo
 			  WHERE u.created_by = $1 AND u.archived_at is null)
 			  SELECT * from UserTask LIMIT $2 OFFSET $3`
 
-	var user []models.UserFetchModel
+	var user models.UserFetch
 	fetchErr := database.Data.Get(&user, query, createdBy, taskSize, pageNo*taskSize)
 
 	return user, fetchErr
@@ -107,12 +113,9 @@ func FetchUsers(createdBy uuid.UUID, pageNo, taskSize int) ([]models.UserFetchMo
 
 func FetchUserRole(userIDs []string) ([]models.RoleStruct, error) {
 
-	query := `SELECT user_id,role FROM roles WHERE user_id IN (?) and archived_at is not null`
+	query := `SELECT user_id,role FROM roles WHERE user_id IN (?) and archived_at is null`
 	var roleArr []models.RoleStruct
-	//var userIDs []string
-	//for _, user := range user {
-	//	userIDs = append(userIDs, user.ID)
-	//}
+
 	sqlQuery, args, err := sqlx.In(query, userIDs)
 	if err != nil {
 		log.Fatal(err)
@@ -122,22 +125,25 @@ func FetchUserRole(userIDs []string) ([]models.RoleStruct, error) {
 	return roleArr, err
 }
 
-func FetchAllUsers(pageNo, taskSize int) ([]models.UserFetchModel, error) {
+func FetchAllUsers(pageNo, taskSize int) (models.UserFetch, error) {
 
-	query := `WITH UserTask AS (SELECT u.id,u.name, u.email, u.username
-			  FROM users u
-			  WHERE u.archived_at is null)
-			  SELECT * from UserTask LIMIT $2 OFFSET $3`
+	query := `select count(u1.*) over() as total_count,u2.id,u2.name,u2.email,u2.username
+			from users u2
+			inner join users u1 using (id)
+			where u2.archived_at is null
+			limit $1
+			offset $2`
 
-	var user []models.UserFetchModel
+	var fetchData models.UserFetch
+	user := make([]models.UserFetchModel, 0)
 	fetchErr := database.Data.Select(&user, query, taskSize, pageNo*taskSize)
 	var userIDs []string
-	for _, user := range user {
-		userIDs = append(userIDs, user.ID)
+	for _, userInfo := range user {
+		userIDs = append(userIDs, userInfo.ID)
 	}
 	roleArr, err := FetchUserRole(userIDs)
 	if err != nil {
-		return nil, err
+		return fetchData, err
 	}
 	var users []models.UserFetchModel
 	for _, u := range user {
@@ -148,7 +154,10 @@ func FetchAllUsers(pageNo, taskSize int) ([]models.UserFetchModel, error) {
 		}
 		users = append(users, u)
 	}
-	return users, fetchErr
+
+	fetchData.TotalCount = user[0].TotalCount
+	fetchData.User = users
+	return fetchData, fetchErr
 }
 
 func GetRole(username string) (*models.UserRoleID, error) {
@@ -166,7 +175,7 @@ func GetRole(username string) (*models.UserRoleID, error) {
 
 func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error) {
 
-	query := `SELECT user_id,latitude,longitude FROM location WHERE user_id IN (?) and archived_at is not null`
+	query := `SELECT user_id,latitude,longitude FROM location WHERE user_id IN (?) and archived_at is null`
 	var userLocation []models.UsersLocations
 	var userIDs []string
 	for _, user := range users {
@@ -181,46 +190,41 @@ func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error)
 	return userLocation, err
 }
 
-func GetAllSubAdmins(pageNo, taskSize int) ([]models.UserFetchModel, error) {
+func GetAllSubAdmins(pageNo, taskSize int) (models.UserFetch, error) {
 
-	query := `WITH UserTask AS (SELECT u.id,u.name,u.email,u.username FROM users u where archived_at is not null)
-			  SELECT * FROM UserTask LIMIT $2 OFFSET $3`
+	query := `with cte as ( select u.id, u.name, u.email, u.username from users u 
+              inner Join roles r on u.id = r.user_id
+              where r.archived_at is null and u.archived_at is null and r.role='subadmin')
+              select * from cte 
+              join (select count(*)as total_count from cte) as a on true 
+              limit $1 OFFSET $2`
 
-	var user []models.UserFetchModel
-	fetchErr := database.Data.Select(&user, query, taskSize, pageNo*taskSize)
+	var user models.UserFetch
+	fetchErr := database.Data.Select(&user.User, query, taskSize, pageNo*taskSize)
 
-	var userIDs []string
-	for _, user := range user {
-		userIDs = append(userIDs, user.ID)
+	userIDs := make([]string, 0)
+	for _, u := range user.User {
+		userIDs = append(userIDs, u.ID)
 	}
 
 	roleArr, err := FetchUserRole(userIDs)
 	if err != nil {
-		return nil, err
+		return user, err
 	}
-	var users []models.UserFetchModel
-	for _, u := range user {
+	var users models.UserFetch
+	users.TotalCount = user.TotalCount
+	for _, u := range user.User {
 		for _, r := range roleArr {
 			if u.ID == r.UserID {
 				u.Role = append(u.Role, r.UserRole)
 			}
 		}
 		if utilities.Contains(u.Role, "subadmin") {
-			users = append(users, u)
+			users.User = append(users.User, u)
 		}
 	}
 
 	return users, fetchErr
-}
-
-func AddRoleQuery(user *models.AddRoleModel) error {
-
-	query := `INSERT INTO roles(user_id,role,username)
-			  VALUES($1,$2,$3)`
-
-	_, addErr := database.Data.Exec(query, user.ID, user.Role, user.Username)
-
-	return addErr
 }
 
 func CreateDishes(dishes []models.Dish, restID string, createdBy uuid.UUID, tx *sqlx.Tx) error {

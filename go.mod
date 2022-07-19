@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/elgris/sqrl v0.0.0-20210727210741-7e0198b30236 // indirect
 	github.com/go-chi/chi/v5 v5.0.7 // indirect
+	github.com/go-playground/validator/v10 v10.11.0 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-migrate/migrate/v4 v4.15.2 // indirect
 	github.com/google/go-github/v35 v35.2.0 // indirect

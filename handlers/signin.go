@@ -12,7 +12,7 @@ import (
 
 func SignIn(w http.ResponseWriter, r *http.Request) {
 
-	cred := &models.Credentials{}
+	cred := models.Credentials{}
 	msg := json.NewDecoder(r.Body).Decode(&cred)
 	if msg != nil {
 		log.Printf("SignIn : Error in decoding the json body")

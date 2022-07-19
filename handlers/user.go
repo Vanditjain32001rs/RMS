@@ -30,7 +30,6 @@ func AddNewUser(w http.ResponseWriter, r *http.Request) {
 	//v := validator.New()
 	//vErr := v.Struct(user)
 	//if vErr != nil {
-	//	log.Printf("AddNewUser : Error in validating the details entered")
 	//	w.WriteHeader(http.StatusBadRequest)
 	//	return
 	//}
@@ -161,18 +160,18 @@ func AddNewLocation(w http.ResponseWriter, r *http.Request) {
 
 func AddSubAdmins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context().Value("User").(models.ContextMap)
-	signedUserRole := ctx.UserRole
+	//signedUserRole := ctx.UserRole
 	signedUser := ctx.UserID
 	signedUserID, uuidErr := uuid.Parse(signedUser)
 	if uuidErr != nil {
 		log.Printf("AddSubAdmins : Error in converting string to uuid for the signed user")
 	}
 
-	if signedUserRole == "subadmin" {
-		log.Printf("AddSubAdmins : Subadmins cannot create other subadmins")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
+	//if signedUserRole == "subadmin" {
+	//	log.Printf("AddSubAdmins : Subadmins cannot create other subadmins")
+	//	w.WriteHeader(http.StatusBadRequest)
+	//	return
+	//}
 
 	user := &models.SubAdminModel{}
 	msg := json.NewDecoder(r.Body).Decode(user)
@@ -191,12 +190,34 @@ func AddSubAdmins(w http.ResponseWriter, r *http.Request) {
 
 	user.Password = passHash
 
-	userID, createErr := helpers.CreateSubAdmins(user, signedUserID)
-	if createErr != nil {
-		log.Printf("AddSubAdmins : Error in creating subadmins %s", createErr)
+	//userID, createErr := helpers.CreateSubAdmins(user, signedUserID)
+	var userID string
+	var err error
+	txErr := database.Tx(func(tx *sqlx.Tx) error {
+		userID, err = helpers.CreateSubAdmins(user, signedUserID, tx)
+		if err != nil {
+			log.Printf("AddSubAdmin : Error in creating the user in users table")
+			w.WriteHeader(http.StatusInternalServerError)
+			return err
+		}
+
+		var AddRole models.AddRoleModel
+		AddRole.ID = userID
+		AddRole.Username = user.Username
+		AddRole.Role = user.Role[0]
+		err = helpers.AddRoleQuery(AddRole, tx)
+		if err != nil {
+			log.Printf("AddSubAdmins : Error in creating user role")
+			//w.WriteHeader(http.StatusInternalServerError)
+			return err
+		}
+		return err
+	})
+	if txErr != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+
 	jsonData, jsonErr := utilities.EncodeToJson(userID)
 	if jsonErr != nil {
 		log.Printf("AddSubAdmins : Error in encoding to json ")

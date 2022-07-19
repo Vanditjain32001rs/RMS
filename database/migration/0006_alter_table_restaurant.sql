@@ -1,0 +1,1 @@
+create unique index restaurant_name_key on restaurant(name,latitude, longitude) where archived_at is null;

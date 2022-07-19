@@ -38,40 +38,46 @@ func CreateUser(user *models.Users, createdBy string, tx *sqlx.Tx) (string, erro
 	return userID, createErr
 }
 
-func CreateSubAdmins(user *models.SubAdminModel, signedUserID uuid.UUID) (string, error) {
-	query := `WITH my_data(name,email,username,password,created_by,role) AS
-			  (VALUES ($1,$2,$3,$4,$5::UUID,$6::user_roles)),
-					step_one as (
-						INSERT INTO users(name,email,username,password,created_by)
-						SELECT m.name, m.email, m.username, m.password, m.created_by FROM my_data m
-						returning id)
-						insert into roles(user_id, role,username)
-						select s1.id, m.role, m.username
-						from step_one s1, my_data m
-						returning user_id`
+func CreateSubAdmins(user *models.SubAdminModel, signedUserID uuid.UUID, tx *sqlx.Tx) (string, error) {
+	//query := `WITH my_data(name,email,username,password,created_by,role) AS
+	//		  (VALUES ($1,$2,$3,$4,$5::UUID,$6::user_roles)),
+	//				step_one as (
+	//					INSERT INTO users(name,email,username,password,created_by)
+	//					SELECT m.name, m.email, m.username, m.password, m.created_by FROM my_data m
+	//					returning id)
+	//					insert into roles(user_id, role,username)
+	//					select s1.id, m.role, m.username
+	//					from step_one s1, my_data m
+	//					returning user_id`
 
+	query := `insert into users(name, email, username, password, created_by)
+			  VALUES ($1,$2,$3,$4,$5)
+			  returning id`
 	var userID string
-	createErr := database.Data.Get(&userID, query, user.Name, user.Email, user.Username, user.Password, signedUserID, user.Role[0])
+	createErr := tx.Get(&userID, query, user.Name, user.Email, user.Username, user.Password, signedUserID)
 
 	return userID, createErr
 }
 
 func RegisterUser(user *models.UserModel) (string, error) {
-	query := `WITH my_data(name,email,username,password,latitude,longitude) AS
-    		  (VALUES ($1,$2,$3,$4,$5,$6)),
-     				step_one as (
-         				insert into users (name, email, username, password)
-             			SELECT m.name, m.email, m.username, m.password FROM my_data m
-             			returning id),
-     				step_two as (
-         				insert into roles (user_id, username)
-             			select s1.id,m.username
-             			from step_one s1,my_data m
-             			returning user_id)
-			  insert into location(user_id, latitude, longitude)
-			  select s2.user_id,m.latitude,m.longitude
-			  from step_two s2,my_data m
-			  RETURNING user_id`
+	//query := `WITH my_data(name,email,username,password,latitude,longitude) AS
+	//		  (VALUES ($1,$2,$3,$4,$5,$6)),
+	// 				step_one as (
+	//     				insert into users (name, email, username, password)
+	//         			SELECT m.name, m.email, m.username, m.password FROM my_data m
+	//         			returning id),
+	// 				step_two as (
+	//     				insert into roles (user_id, username)
+	//         			select s1.id,m.username
+	//         			from step_one s1,my_data m
+	//         			returning user_id)
+	//		  insert into location(user_id, latitude, longitude)
+	//		  select s2.user_id,m.latitude,m.longitude
+	//		  from step_two s2,my_data m
+	//		  RETURNING user_id`
+
+	query := `insert into users(name, email, username, password)
+			  VALUES ($1,$2,$3,$4)`
 
 	var userID string
 	args := []interface{}{
@@ -79,8 +85,6 @@ func RegisterUser(user *models.UserModel) (string, error) {
 		user.Email,
 		user.Username,
 		user.Password,
-		user.Location.Latitude,
-		user.Location.Longitude,
 	}
 
 	registerErr := database.Data.Get(&userID, query, args...)
@@ -90,6 +94,7 @@ func RegisterUser(user *models.UserModel) (string, error) {
 
 func GetPassword(username string) (string, error) {
 
+	// language=sql
 	query := `SELECT password FROM users WHERE username=$1 and archived_at is not null`
 	var hashPass string
 	getPassErr := database.Data.Get(&hashPass, query, username)
@@ -192,11 +197,15 @@ func GetLocation(users []models.UserFetchModel) ([]models.UsersLocations, error)
 
 func GetAllSubAdmins(pageNo, taskSize int) (models.UserFetch, error) {
 
-	query := `with cte as ( select u.id, u.name, u.email, u.username from users u 
-              inner Join roles r on u.id = r.user_id
-              where r.archived_at is null and u.archived_at is null and r.role='subadmin')
-              select * from cte 
-              join (select count(*)as total_count from cte) as a on true 
+	query := `with cte as (select u.id, u.name, u.email, u.username
+                           from users u
+                                      inner Join roles r on u.id = r.user_id
+                           where r.archived_at is null
+                           and u.archived_at is null
+                           and r.role = 'subadmin')
+              select *
+              from cte
+                      join (select count(*) as total_count from cte) as a on true
               limit $1 OFFSET $2`
 
 	var user models.UserFetch
@@ -228,6 +237,7 @@ func GetAllSubAdmins(pageNo, taskSize int) (models.UserFetch, error) {
 }
 
 func CreateDishes(dishes []models.Dish, restID string, createdBy uuid.UUID, tx *sqlx.Tx) error {
+
 	psql := sqrl.StatementBuilder.PlaceholderFormat(sqrl.Dollar)
 	insertQuery := psql.Insert("dishes").Columns("name", "price", "restaurant_id", "created_by")
 	for _, dish := range dishes {
